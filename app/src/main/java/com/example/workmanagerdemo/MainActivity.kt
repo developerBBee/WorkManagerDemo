@@ -1,5 +1,6 @@
 package com.example.workmanagerdemo
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +26,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,51 +47,40 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val onSeeFileClick = {
+            viewModel.outputUri?.let { currentUri ->
+                val actionView = Intent(Intent.ACTION_VIEW, currentUri)
+                actionView.resolveActivity(packageManager)?.run {
+                    startActivity(actionView)
+                }
+            }
+            Unit
+        }
+
         setContent {
             WorkManagerDemoTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                        val uiState by viewModel.workStateFlow.collectAsState()
+
                         MainContents(
                             modifier = Modifier,
-                            viewModel = viewModel
+                            uiState = uiState,
+                            onGoClick = { selectedOption ->
+                                getBlurLevel(selectedOption = selectedOption)
+                                    .also { blurLevel ->
+                                        viewModel.applyBlur(blurLevel)
+                                    }
+                            },
+                            onCancelClick = viewModel::cancelWork,
+                            onSeeFileClick = onSeeFileClick
                         )
                     }
                 }
             }
         }
     }
-
-//    /**
-//     * Shows and hides views for when the Activity is processing an image
-//     */
-//    private fun showWorkInProgress() {
-//        with(binding) {
-//            progressBar.visibility = View.VISIBLE
-//            cancelButton.visibility = View.VISIBLE
-//            goButton.visibility = View.GONE
-//            seeFileButton.visibility = View.GONE
-//        }
-//    }
-//
-//    /**
-//     * Shows and hides views for when the Activity is done processing an image
-//     */
-//    private fun showWorkFinished() {
-//        with(binding) {
-//            progressBar.visibility = View.GONE
-//            cancelButton.visibility = View.GONE
-//            goButton.visibility = View.VISIBLE
-//        }
-//    }
-//
-//    private val blurLevel: Int
-//        get() =
-//            when (binding.radioBlurGroup.checkedRadioButtonId) {
-//                R.id.radio_blur_lv_1 -> 1
-//                R.id.radio_blur_lv_2 -> 2
-//                R.id.radio_blur_lv_3 -> 3
-//                else -> 1
-//            }
 }
 
 private val radioOptions = listOf(R.string.blur_lv_1, R.string.blur_lv_2, R.string.blur_lv_3)
@@ -104,11 +95,25 @@ private fun getBlurLevel(selectedOption: Int?): Int = when (selectedOption) {
 @Composable
 fun MainContents(
     modifier: Modifier = Modifier,
-    viewModel: BlurViewModel,
+    uiState: UiState,
+    onGoClick: (Int?) -> Unit,
+    onCancelClick: () -> Unit,
+    onSeeFileClick: () -> Unit,
 ) {
     val (selectedOption, onOptionSelected) = remember { mutableStateOf<Int?>(null) }
-
     var visibilityState by remember { mutableStateOf(InitialVisibilityState) }
+
+    visibilityState = when (uiState.workingState) {
+        WorkingState.INITIAL_STATE -> {
+            InitialVisibilityState
+        }
+        WorkingState.IN_PROGRESS -> {
+            ProgressVisibilityState
+        }
+        WorkingState.FINISHED -> {
+            visibilityState.changeStateOnFinish(seeFileVisibility = uiState.hasOutputUri)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -153,28 +158,26 @@ fun MainContents(
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.Center
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             if (visibilityState.cancelVisibility) {
-                Button(onClick = {}) {
+                Button(onClick = onCancelClick) {
                     Text(text = stringResource(id = R.string.cancel_work))
                 }
             }
             if (visibilityState.progressVisibility) {
-                LinearProgressIndicator(modifier = Modifier.width(100.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.width(100.dp).padding(horizontal = 8.dp)
+                )
             }
             if (visibilityState.goVisibility) {
-                Button(onClick = {
-                    getBlurLevel(selectedOption = selectedOption)
-                        .also { blurLevel ->
-                            viewModel.applyBlur(blurLevel)
-                        }
-                }) {
+                Button(onClick = { onGoClick(selectedOption) }) {
                     Text(text = stringResource(id = R.string.go))
                 }
             }
             if (visibilityState.seeFileVisibility) {
-                Button(onClick = {}) {
+                Button(onClick = onSeeFileClick) {
                     Text(text = stringResource(id = R.string.see_file))
                 }
             }
@@ -203,8 +206,9 @@ private val ProgressVisibilityState = VisibilityState(
     seeFileVisibility = false,
 )
 
-private fun VisibilityState.changeStateOnFinish() = copy(
+private fun VisibilityState.changeStateOnFinish(seeFileVisibility: Boolean) = copy(
     progressVisibility = false,
     cancelVisibility = false,
     goVisibility = true,
+    seeFileVisibility = seeFileVisibility,
 )
