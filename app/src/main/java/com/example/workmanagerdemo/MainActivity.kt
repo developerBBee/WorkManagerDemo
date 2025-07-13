@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        viewModel.scheduleDailyAutoBlur()
 
         val onSeeFileClick = {
             viewModel.outputUri?.let { currentUri ->

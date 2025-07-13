@@ -10,20 +10,27 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.example.workmanagerdemo.contants.DAILY_AUTO_BLUR_WORK_NAME
+import com.example.workmanagerdemo.contants.DAILY_INTERVAL_HOURS
 import com.example.workmanagerdemo.contants.IMAGE_MANIPULATION_WORK_NAME
 import com.example.workmanagerdemo.contants.KEY_IMAGE_URI
 import com.example.workmanagerdemo.contants.TAG_OUTPUT
 import com.example.workmanagerdemo.workers.BlurWorker
 import com.example.workmanagerdemo.workers.CleanupWorker
+import com.example.workmanagerdemo.workers.DailyAutoBlurWorker
 import com.example.workmanagerdemo.workers.SaveImageToFileWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
 
 class BlurViewModel(application: Application) : ViewModel() {
 
@@ -139,6 +146,34 @@ class BlurViewModel(application: Application) : ViewModel() {
 
     internal fun cancelWork() {
         workManager.cancelUniqueWork(IMAGE_MANIPULATION_WORK_NAME)
+    }
+
+    internal fun scheduleDailyAutoBlur() {
+        val currentTime = Calendar.getInstance()
+        val targetTime = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            
+            if (before(currentTime)) {
+                add(Calendar.DAY_OF_MONTH, 1)
+            }
+        }
+        
+        val initialDelayMillis = targetTime.timeInMillis - currentTime.timeInMillis
+        
+        val dailyBlurWork = PeriodicWorkRequestBuilder<DailyAutoBlurWorker>(
+            DAILY_INTERVAL_HOURS, TimeUnit.HOURS
+        )
+            .setInitialDelay(initialDelayMillis, TimeUnit.MILLISECONDS)
+            .build()
+        
+        workManager.enqueueUniquePeriodicWork(
+            DAILY_AUTO_BLUR_WORK_NAME,
+            ExistingPeriodicWorkPolicy.REPLACE,
+            dailyBlurWork
+        )
     }
 
     class BlurViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
